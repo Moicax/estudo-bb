@@ -22,8 +22,8 @@ export function createAI(store) {
   // chaves e modelos: remove espaços, quebras de linha e caracteres invisíveis que vêm junto ao colar
   const kv = (k) => { const v = String(keys()[k] || '').trim(); return /Key$/.test(k) ? v.replace(/[^\x21-\x7E]/g, '') : v.replace(/[\u0000-\u001F\u007F-\u00A0\u200B-\u200F\uFEFF]/g, ''); };
 
-  async function post(name, url, headers, body, signal) {
-    const c = new AbortController(); const tm = setTimeout(() => c.abort(), 90000);
+  async function post(name, url, headers, body, signal, ms = 90000) {
+    const c = new AbortController(); const tm = setTimeout(() => c.abort(), ms);
     if (signal) { if (signal.aborted) c.abort(); else signal.addEventListener('abort', () => c.abort()); }
     let res;
     try { res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal: c.signal }); }
@@ -40,7 +40,7 @@ export function createAI(store) {
     gemini: { name: () => 'Gemini', ok: () => !!kv('gemKey'), async call(prompt, o) {
       const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }] };
       if (o.json) body.generationConfig = { responseMimeType: 'application/json' };
-      const j = await post('Gemini', 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(kv('gemModel') || DEFAULT_KEYS.gemModel) + ':generateContent', { 'x-goog-api-key': kv('gemKey') }, body, o.signal);
+      const j = await post('Gemini', 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(kv('gemModel') || DEFAULT_KEYS.gemModel) + ':generateContent', { 'x-goog-api-key': kv('gemKey') }, body, o.signal, o.timeout);
       const c = j && j.candidates && j.candidates[0];
       const t = c && c.content && c.content.parts ? c.content.parts.map(p => p.text || '').join('') : '';
       if (!t) throw { code: 'empty', provider: 'Gemini' };
@@ -48,13 +48,13 @@ export function createAI(store) {
     } },
     gpt: { name: () => ({ groq: 'Groq', openrouter: 'OpenRouter' })[keys().gptPreset] || 'GPT', ok: () => !!kv('gptKey'), async call(prompt, o) {
       const n = P.gpt.name();
-      const j = await post(n, (kv('gptBase') || PRESETS.openai.base).replace(/\/+$/, '') + '/chat/completions', { authorization: 'Bearer ' + kv('gptKey') }, { model: kv('gptModel'), messages: [{ role: 'user', content: prompt }] }, o.signal);
+      const j = await post(n, (kv('gptBase') || PRESETS.openai.base).replace(/\/+$/, '') + '/chat/completions', { authorization: 'Bearer ' + kv('gptKey') }, { model: kv('gptModel'), messages: [{ role: 'user', content: prompt }] }, o.signal, o.timeout);
       const c = j && j.choices && j.choices[0]; const t = (c && c.message && c.message.content) || '';
       if (!t) throw { code: 'empty', provider: n };
       return { text: t, truncated: c.finish_reason === 'length' };
     } },
     claude: { name: () => 'Claude', ok: () => !!kv('claKey'), async call(prompt, o) {
-      const j = await post('Claude', 'https://api.anthropic.com/v1/messages', { 'x-api-key': kv('claKey'), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, { model: kv('claModel') || DEFAULT_KEYS.claModel, max_tokens: 4096, messages: [{ role: 'user', content: prompt }] }, o.signal);
+      const j = await post('Claude', 'https://api.anthropic.com/v1/messages', { 'x-api-key': kv('claKey'), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, { model: kv('claModel') || DEFAULT_KEYS.claModel, max_tokens: o.maxTokens || 4096, messages: [{ role: 'user', content: prompt }] }, o.signal, o.timeout);
       const t = j && Array.isArray(j.content) ? j.content.filter(b => b.type === 'text').map(b => b.text).join('') : '';
       if (!t) throw { code: 'empty', provider: 'Claude' };
       return { text: t, truncated: j.stop_reason === 'max_tokens' };
@@ -100,8 +100,10 @@ export function createAI(store) {
 
   async function test(k) {
     if (!P[k].ok()) throw { code: 'no_key' };
-    const r = await P[k].call('Responda apenas com a palavra OK.', {});
-    return r.text.trim().slice(0, 30);
+    const t0 = Date.now();
+    const r = await P[k].call('Responda apenas com a palavra OK.', { timeout: 30000, maxTokens: 20 });
+    r.text = r.text.trim().slice(0, 30) + ' · ' + ((Date.now() - t0) / 1000).toFixed(1).replace('.', ',') + ' s';
+    return r.text;
   }
 
   return {
@@ -166,7 +168,7 @@ export function aiMessage(e) {
   if (c === 'all_failed') return 'Nenhuma IA respondeu. ' + e.errs.map(aiMessage).join(' ');
   if (c === 'bad_key') return who + 'chave inválida ou sem permissão. Confira em Ajustes.';
   if (c === 'rate_limited') return who + 'limite de uso do serviço atingido por agora. Tente mais tarde ou use outra IA.';
-  if (c === 'timeout') return who + 'demorou demais para responder. Tente de novo.';
+  if (c === 'timeout') return who + 'não respondeu em 30 segundos. Pode ser a conexão bloqueada (bloqueador de anúncios ou navegador dentro de outro app) ou o modelo lento: troque o Modelo para gemini-2.5-flash-lite e teste de novo.';
   if (c === 'network') return who + 'o navegador bloqueou a conexão. Se usa bloqueador de anúncios (ou o navegador Brave/Opera com proteção), libere este site ou o endereço generativelanguage.googleapis.com. Confira também se a chave foi colada inteira.' + (e.message ? ' Detalhe técnico: ' + e.message : '');
   if (c === 'invalid' || c === 'empty') return who + 'a resposta veio incompleta ou fora do formato. Tente de novo.';
   if (c === 'http') return who + 'erro do serviço' + (e.message ? ' (' + e.message + ')' : '') + '.';

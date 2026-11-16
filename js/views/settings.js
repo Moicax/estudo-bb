@@ -116,7 +116,7 @@ export const actions = {
     await ctx.store.patch(plan.id, { customFields: (plan.data.customFields || []).filter(x => x.id !== el.dataset.id) });
   },
   async 'ai-test'(el, e, ctx) {
-    const p = el.dataset.p; S.tests[p] = 'Testando…'; ctx.render();
+    const p = el.dataset.p; S.tests[p] = 'Testando… (até 30 segundos)'; el.disabled = true; ctx.render(true);
     try { const r = await ctx.ai.test(p); S.tests[p] = 'Funcionando ✓ (respondeu: ' + r + ')'; } catch (err) { S.tests[p] = aiMessage({ provider: '', ...err }); }
     ctx.render();
   },
