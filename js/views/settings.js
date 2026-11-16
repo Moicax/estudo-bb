@@ -179,7 +179,11 @@ export const changes = {
   async prefb(el, e, ctx) { await setPref(ctx, el.dataset.k, el.checked); },
   async plan(el, e, ctx) { const v = el.value.trim(); if (el.dataset.k === 'name' && !v) { el.value = ctx.plan.data.name; return; } await ctx.store.patch(ctx.plan.id, { [el.dataset.k]: v }); },
   async exam(el, e, ctx) { await ctx.store.patch(ctx.plan.id, { examDate: isCivilDate(el.value) ? el.value : null }); },
-  async key(el, e, ctx) { await ctx.ai.setKeys({ [el.dataset.k]: el.dataset.k === 'limitDay' ? Math.max(1, +el.value || DEFAULT_KEYS.limitDay) : el.value.trim() }); },
+  async key(el, e, ctx) {
+    let v = el.value.trim();
+    if (/Key$/.test(el.dataset.k)) { v = v.replace(/[^\x21-\x7E]/g, ''); el.value = v; S.tests = {}; }
+    await ctx.ai.setKeys({ [el.dataset.k]: el.dataset.k === 'limitDay' ? Math.max(1, +el.value || DEFAULT_KEYS.limitDay) : v });
+  },
   async preset(el, e, ctx) { const ps = PRESETS[el.value] || PRESETS.openai; await ctx.ai.setKeys({ gptPreset: el.value, gptBase: ps.base, gptModel: ps.model }); ctx.render(); },
   async mathadv(el, e, ctx) { const prof = ctx.profile; await ctx.store.patch('profile', { ai: { ...(prof.data.ai || {}), mathAdvanced: el.checked } }); },
 };

@@ -19,14 +19,15 @@ export function createAI(store) {
   const inflight = new Map();
   let lastCall = 0;
   const keys = () => ({ ...DEFAULT_KEYS, ...(store.getMeta('aiKeys') || {}) });
-  const kv = (k) => String(keys()[k] || '').trim();
+  // chaves e modelos: remove espaços, quebras de linha e caracteres invisíveis que vêm junto ao colar
+  const kv = (k) => { const v = String(keys()[k] || '').trim(); return /Key$/.test(k) ? v.replace(/[^\x21-\x7E]/g, '') : v.replace(/[\u0000-\u001F\u007F-\u00A0\u200B-\u200F\uFEFF]/g, ''); };
 
   async function post(name, url, headers, body, signal) {
     const c = new AbortController(); const tm = setTimeout(() => c.abort(), 90000);
     if (signal) { if (signal.aborted) c.abort(); else signal.addEventListener('abort', () => c.abort()); }
     let res;
     try { res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal: c.signal }); }
-    catch (e) { clearTimeout(tm); if (signal && signal.aborted) throw { code: 'cancelled' }; throw { code: navigator.onLine === false ? 'offline' : 'network', provider: name }; }
+    catch (e) { clearTimeout(tm); if (signal && signal.aborted) throw { code: 'cancelled' }; if (c.signal.aborted) throw { code: 'timeout', provider: name }; throw { code: navigator.onLine === false ? 'offline' : 'network', provider: name, message: String((e && e.message) || '').slice(0, 140) }; }
     const j = await res.json().catch(() => null); clearTimeout(tm);
     if (!res.ok) {
       const m = j && j.error ? (j.error.message || j.error) : res.statusText;
@@ -165,7 +166,8 @@ export function aiMessage(e) {
   if (c === 'all_failed') return 'Nenhuma IA respondeu. ' + e.errs.map(aiMessage).join(' ');
   if (c === 'bad_key') return who + 'chave inválida ou sem permissão. Confira em Ajustes.';
   if (c === 'rate_limited') return who + 'limite de uso do serviço atingido por agora. Tente mais tarde ou use outra IA.';
-  if (c === 'network') return who + 'não consegui conectar. Confira a internet e o endereço da API.';
+  if (c === 'timeout') return who + 'demorou demais para responder. Tente de novo.';
+  if (c === 'network') return who + 'o navegador bloqueou a conexão. Se usa bloqueador de anúncios (ou o navegador Brave/Opera com proteção), libere este site ou o endereço generativelanguage.googleapis.com. Confira também se a chave foi colada inteira.' + (e.message ? ' Detalhe técnico: ' + e.message : '');
   if (c === 'invalid' || c === 'empty') return who + 'a resposta veio incompleta ou fora do formato. Tente de novo.';
   if (c === 'http') return who + 'erro do serviço' + (e.message ? ' (' + e.message + ')' : '') + '.';
   return 'A IA não respondeu agora. Tente de novo em instantes.';
