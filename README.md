@@ -1,9 +1,13 @@
-# Meu Estudo BB
+# Meu Estudo
 
-Plano de estudo de 13 semanas para Escriturário (Agente Comercial) do Banco do Brasil: cronograma, vídeos, revisões automáticas, caderno de erros, simulados e dúvidas com IA.
+App web de estudos: agenda, aulas, revisões espaçadas (1, 7 e 30 dias), questões com IA, caderno de erros, simulados e progresso.
+**Funciona sem internet**, pode ser instalado no celular ou no computador e, com conta, **sincroniza entre aparelhos**.
 
-- Funciona sem internet e pode ser instalado no celular ou no computador ("Adicionar à tela inicial").
-- Os dados ficam guardados no próprio aparelho. Use **Ajustes > Backup** para guardar uma cópia ou passar para outro aparelho.
-- IA: as perguntas simples vão para o Gemini (chave grátis) ou o GPT, e as avançadas vão para o Claude. As chaves são coladas em **Ajustes** e ficam só no seu navegador.
+Site: https://moicax.github.io/estudo-bb/
 
-Para publicar uma atualização, troque a versão em `CACHE` no `sw.js`, assim os aparelhos baixam a página nova.
+- Primeiro plano: **Banco do Brasil 2026 (Escriturário)**, com 13 semanas e 192 aulas gratuitas organizadas por dia. Os pesos das matérias são estimados a partir do edital de 2023.
+- Dados do sistema anterior são importados no primeiro acesso, com cópia de segurança antes e sem apagar nada.
+- Conta: login com Google ou e-mail e senha (Firebase). Para ativar, siga [docs/FIREBASE.md](docs/FIREBASE.md).
+- Backup completo e documentado: [docs/BACKUP.md](docs/BACKUP.md). Arquitetura e testes: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+
+Depois de mudar arquivos, gere o cache offline com `node tools/build-sw.mjs`.

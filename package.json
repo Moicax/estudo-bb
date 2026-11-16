@@ -1,0 +1,20 @@
+{
+  "name": "estudo-bb",
+  "private": true,
+  "type": "module",
+  "description": "Meu Estudo: app web de estudos local-first com sincronização Firebase. Sem etapa de build: os arquivos do repositório são o site.",
+  "scripts": {
+    "vendor": "node tools/vendor.mjs",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "emulators": "firebase emulators:start --only auth,firestore --project demo-estudo",
+    "test:rules": "firebase emulators:exec --only auth,firestore --project demo-estudo \"node --test --test-concurrency=1 tests/rules/*.test.mjs\"",
+    "test:e2e": "firebase emulators:exec --only auth,firestore --project demo-estudo \"node tests/e2e/run.mjs\""
+  },
+  "devDependencies": {
+    "firebase": "13.1.0",
+    "firebase-tools": "15.34.1",
+    "@firebase/rules-unit-testing": "6.0.0",
+    "lucide-static": "1.66.0",
+    "fake-indexeddb": "6.2.7"
+  }
+}

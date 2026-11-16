@@ -1,0 +1,45 @@
+rules_version = '2';
+// Regras de acesso do Meu Estudo.
+// - Cada pessoa só lê e grava em users/{seu uid}/...
+// - Cada registro precisa ter o formato esperado e revisão sequencial (rev = anterior + 1),
+//   o que impede que um aparelho desatualizado sobrescreva às cegas a gravação de outro.
+// - Exclusão é um marcador (deleted = true) que não pode ser desfeito; apagar documentos de verdade é proibido.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function validRecord(rid) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['id', 'kind', 'planId', 'data', 'deleted', 'rev', 'updatedAt', 'updatedBy', 'schema', 'serverAt'])
+        && d.keys().hasAll(['id', 'kind', 'data', 'deleted', 'rev', 'serverAt'])
+        && d.id == rid
+        && d.kind in ['profile', 'plan', 'subject', 'activity', 'video', 'playlist', 'videoProgress', 'note',
+                      'question', 'quizSet', 'attempt', 'errorEntry', 'simulation', 'doubt', 'session', 'version']
+        && (d.get('planId', null) == null || d.planId is string)
+        && d.data is map
+        && d.deleted is bool
+        && d.rev is int
+        && d.serverAt == request.time
+        && (!d.keys().hasAny(['updatedAt']) || d.updatedAt is number)
+        && (!d.keys().hasAny(['updatedBy']) || (d.updatedBy is string && d.updatedBy.size() < 100));
+    }
+
+    match /users/{uid}/records/{rid} {
+      allow read: if signedIn(uid);
+      allow create: if signedIn(uid) && validRecord(rid) && request.resource.data.rev == 1;
+      allow update: if signedIn(uid) && validRecord(rid)
+        && request.resource.data.rev == resource.data.rev + 1
+        && request.resource.data.kind == resource.data.kind
+        && (resource.data.deleted == false || request.resource.data.deleted == true);
+      allow delete: if false;
+    }
+
+    // Qualquer outro caminho é negado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
