@@ -13,12 +13,13 @@ export const PRESETS = {
   groq: { label: 'Groq (cota grátis com limite)', base: 'https://api.groq.com/openai/v1', model: 'openai/gpt-oss-120b', keyUrl: 'https://console.groq.com/keys', fallbacks: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'] },
   openrouter: { label: 'OpenRouter (modelos grátis com limite)', base: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct:free', keyUrl: 'https://openrouter.ai/keys' },
 };
-export const DEFAULT_KEYS = { gemKey: '', gemModel: 'gemini-flash-latest', gptPreset: 'openai', gptKey: '', gptBase: PRESETS.openai.base, gptModel: PRESETS.openai.model, claKey: '', claModel: 'claude-sonnet-5-5', order: 'gemini', limitDay: 80 };
+export const DEFAULT_KEYS = { gemKey: '', gemModel: 'gemini-3.5-flash-lite', gptPreset: 'openai', gptKey: '', gptBase: PRESETS.openai.base, gptModel: PRESETS.openai.model, claKey: '', claModel: 'claude-sonnet-5-5', order: 'gemini', limitDay: 80 };
 
 export function createAI(store) {
   const inflight = new Map();
   let lastCall = 0;
-  const keys = () => ({ ...DEFAULT_KEYS, ...(store.getMeta('aiKeys') || {}) });
+  const OLD_GEM = ['gemini-flash-latest', 'gemini-2.5-flash', ''];
+  const keys = () => { const k = { ...DEFAULT_KEYS, ...(store.getMeta('aiKeys') || {}) }; if (OLD_GEM.includes(String(k.gemModel || '').trim())) k.gemModel = DEFAULT_KEYS.gemModel; if (k.gptPreset === 'groq' && k.gptModel === 'llama-3.3-70b-versatile') k.gptModel = PRESETS.groq.model; return k; };
   // chaves e modelos: remove espaços, quebras de linha e caracteres invisíveis que vêm junto ao colar
   const kv = (k) => { const v = String(keys()[k] || '').trim(); return /Key$/.test(k) ? v.replace(/[^\x21-\x7E]/g, '') : v.replace(/[\u0000-\u001F\u007F-\u00A0\u200B-\u200F\uFEFF]/g, ''); };
 
@@ -41,11 +42,11 @@ export function createAI(store) {
       const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }] };
       if (o.json) body.generationConfig = { responseMimeType: 'application/json' };
       // se o modelo escolhido estiver sobrecarregado (erro 503/429 do Google), tenta modelos alternativos
-      const models = [...new Set([kv('gemModel') || DEFAULT_KEYS.gemModel, 'gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-lite-latest'])];
+      const models = [...new Set([kv('gemModel') || DEFAULT_KEYS.gemModel, 'gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.8-flash'])];
       let j, lastErr;
       for (const m of models) {
         try { j = await post('Gemini', 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':generateContent', { 'x-goog-api-key': kv('gemKey') }, body, o.signal, o.timeout); lastErr = null; break; }
-        catch (e) { lastErr = e; const busy = e && (e.status === 503 || e.status === 429 || e.status === 404 || /high demand|overloaded|unavailable|not found/i.test(e.message || '')); if (!busy || e.code === 'bad_key') throw e; }
+        catch (e) { lastErr = e; const keyProblem = e && (e.status === 401 || /api key/i.test(e.message || '')); if (!e || keyProblem || e.code === 'cancelled' || e.code === 'offline' || e.code === 'network') throw e; }
       }
       if (lastErr) throw { ...lastErr, code: 'busy' };
       const c = j && j.candidates && j.candidates[0];
@@ -187,7 +188,7 @@ export function aiMessage(e) {
   if (c === 'all_failed') return 'Nenhuma IA respondeu. ' + e.errs.map(aiMessage).join(' ');
   if (c === 'bad_key') return who + 'chave inválida ou sem permissão. Confira em Ajustes.';
   if (c === 'rate_limited') return who + 'limite de uso do serviço atingido por agora. Tente mais tarde ou use outra IA.';
-  if (c === 'busy') return who + 'os servidores do Google estão sobrecarregados agora (tentei mais de um modelo). Costuma passar em alguns minutos. Se tiver o GPT configurado, escolha "GPT, depois Gemini" em Ajustes.';
+  if (c === 'busy') return who + 'nenhum modelo do Gemini respondeu agora (tentei vários)' + (e.message ? ' — ' + e.message : '') + '. Costuma passar em alguns minutos. Se tiver o GPT configurado, escolha "GPT, depois Gemini" em Ajustes.';
   if (c === 'timeout') return who + 'não respondeu em 30 segundos. Pode ser a conexão bloqueada (bloqueador de anúncios ou navegador dentro de outro app) ou o modelo lento: troque o Modelo para gemini-2.5-flash-lite e teste de novo.';
   if (c === 'network') return who + 'o navegador bloqueou a conexão. Se usa bloqueador de anúncios (ou o navegador Brave/Opera com proteção), libere este site ou o endereço generativelanguage.googleapis.com. Confira também se a chave foi colada inteira.' + (e.message ? ' Detalhe técnico: ' + e.message : '');
   if (c === 'invalid' || c === 'empty') return who + 'a resposta veio incompleta ou fora do formato. Tente de novo.';
