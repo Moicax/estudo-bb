@@ -6,6 +6,7 @@
 @font-face { font-family: 'Plus Jakarta Sans'; src: url('../assets/fonts/plus-jakarta-sans-latin.woff2') format('woff2'); font-weight: 500 800; font-display: swap; }
 
 :root {
+  --hl-y: #fde68a; --hl-g: #bbf7d0; --hl-b: #bfdbfe; --hl-p: #fbcfe8; --hl-o: #fed7aa; --hl-ink: #1b2420;
   --bg: #f2f5f4; --surface: #ffffff; --surface-2: #f7f9f8; --sunken: #e9eeec; --line: #dbe2df; --line-strong: #c4ceca;
   --ink: #15201c; --ink-2: #3a4642; --muted: #5e6c67;
   --primary: #0a7654; --primary-hover: #08613f; --primary-soft: #e0f2ea; --primary-ink: #ffffff; --on-soft: #065036;
@@ -22,6 +23,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+  --hl-y: #6b5a12; --hl-g: #1f5a3a; --hl-b: #24406e; --hl-p: #6b2a4d; --hl-o: #6e3d14; --hl-ink: #f3f6f4;
     --bg: #0e1211; --surface: #161b1a; --surface-2: #1b2220; --sunken: #111615; --line: #27302d; --line-strong: #36413d;
     --ink: #e5ebe9; --ink-2: #c0cac6; --muted: #91a09a;
     --primary: #37c98f; --primary-hover: #55d8a5; --primary-soft: #12302a; --primary-ink: #03241a; --on-soft: #93e6c3;
@@ -32,6 +34,7 @@
   }
 }
 :root[data-theme="dark"] {
+  --hl-y: #6b5a12; --hl-g: #1f5a3a; --hl-b: #24406e; --hl-p: #6b2a4d; --hl-o: #6e3d14; --hl-ink: #f3f6f4;
   --bg: #0e1211; --surface: #161b1a; --surface-2: #1b2220; --sunken: #111615; --line: #27302d; --line-strong: #36413d;
   --ink: #e5ebe9; --ink-2: #c0cac6; --muted: #91a09a;
   --primary: #37c98f; --primary-hover: #55d8a5; --primary-soft: #12302a; --primary-ink: #03241a; --on-soft: #93e6c3;
@@ -342,3 +345,21 @@ html[data-motion="reduce"] *, html[data-motion="reduce"] *::before, html[data-mo
 .ai-usage { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 6px; line-height: 1.5; }
 .ai-usage .ico { vertical-align: -3px; }
 .side-foot .ai-usage { margin: 0 8px; font-size: 12px; }
+
+/* marca-texto */
+.rich-wrap { display: flex; flex-direction: column; gap: 6px; }
+.hl-bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.hl-btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); display: grid; place-items: center; cursor: pointer; color: var(--ink-2); transition: transform var(--t-fast) var(--ease), border-color var(--t-fast); }
+.hl-btn:hover { border-color: var(--muted); }
+.hl-btn:active { transform: scale(.92); }
+.hl-btn .sw { width: 18px; height: 18px; border-radius: 5px; display: block; }
+.sw[data-c="y"], mark[data-c="y"] { background: var(--hl-y); } .sw[data-c="g"], mark[data-c="g"] { background: var(--hl-g); }
+.sw[data-c="b"], mark[data-c="b"] { background: var(--hl-b); } .sw[data-c="p"], mark[data-c="p"] { background: var(--hl-p); }
+.sw[data-c="o"], mark[data-c="o"] { background: var(--hl-o); }
+mark[data-c] { color: var(--hl-ink); border-radius: 3px; padding: 0 1px; }
+.hl-tip { font-size: 12px; color: var(--muted); margin-left: 4px; opacity: .7; transition: color var(--t-fast); }
+.hl-tip.show { color: var(--warn); opacity: 1; font-weight: 650; }
+.rich { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; cursor: text; transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+.rich:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); }
+.rich:empty::before { content: attr(data-ph); color: var(--muted); pointer-events: none; }
+.rich span[style*="background"] { color: var(--hl-ink); border-radius: 3px; }

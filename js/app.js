@@ -121,7 +121,7 @@ export function render(force = false) {
   requestAnimationFrame(() => { renderQueued = false; const f = forceNext; forceNext = false; doRender(f); });
 }
 function view0() { return $('#view') || document.body; }
-function editing() { const a = document.activeElement; return a && $('#view') && $('#view').contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && /text|search|email|url|number|password/.test(a.type))); }
+function editing() { const a = document.activeElement; return a && $('#view') && $('#view').contains(a) && (a.isContentEditable || a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && /text|search|email|url|number|password/.test(a.type))); }
 function doRender(force = false) {
   const name = ctx.route.name, V = VIEWS[name] || Today;
   if (name === 'entrar' || name === 'boas-vindas') { renderFull(V); return; }

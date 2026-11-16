@@ -3,6 +3,7 @@ import { icon, esc, chip, empty, debounce, openDialog, confirmDialog, toast, chi
 import { today, fmtShort, fmtLong, fmtDur, fmtClock, rid, safeUrl, isCivilDate } from '../core/util.js';
 import { subjectMap, subjectsOf, watched, activeSession, sessionElapsed, sessionStart, sessionPause, sessionResume, sessionStop, sessionAutoFinish, focusSecondsOf, weekOf } from '../domain/study.js';
 import { STATUS, ERROR_REASONS } from '../data/schema.js';
+import { richEditor, sanitize } from '../ui/rich.js';
 import { prompts, validQuestions, aiMessage, isAdvanced } from '../ai/ai.js';
 
 const S = { openNotes: new Set(), aiBusy: {}, aiErr: {}, doubtLevel: 'auto', showAllDoubts: false };
@@ -62,7 +63,7 @@ function lessons(ctx, a) {
       <div class="vid-acts row tight"><button class="btn sm ghost icon" data-act="vnote" data-vid="${esc(v.id)}" aria-expanded="${open}" aria-label="Anotações desta aula">${icon('pencil', 'sm')}</button>
       <a class="btn sm soft" href="${esc(safeUrl(v.data.url))}" target="_blank" rel="noopener noreferrer">${icon('play', 'sm')}<span>Assistir</span></a>
       <button class="btn sm ghost icon" data-act="detach" data-vid="${esc(v.id)}" aria-label="Tirar esta aula do dia">${icon('x', 'sm')}</button></div></div>
-      <div class="vid-note collapse ${open ? 'open' : ''}"><div>${open ? `<label class="sr-only" for="vn-${esc(v.id)}">Anotações da aula</label><textarea id="vn-${esc(v.id)}" data-input="vnote" data-vid="${esc(v.id)}" placeholder="O que você aprendeu nesta aula. Fica salvo enquanto você digita.">${esc(n ? n.data.text : '')}</textarea>` : ''}</div></div>`;
+      <div class="vid-note collapse ${open ? 'open' : ''}"><div>${open ? `${richEditor({ id: 'vn-' + v.id, input: 'vnote', attrs: `data-vid="${esc(v.id)}"`, text: n ? n.data.text : '', html: n ? n.data.textHtml : '', placeholder: 'O que você aprendeu nesta aula. Fica salvo enquanto você digita.', label: 'Anotações da aula' })}` : ''}</div></div>`;
   }
   return h + `<button class="btn sm" data-act="add-video" style="margin-top:8px">${icon('plus', 'sm')}Adicionar aula</button></section>`;
 }
@@ -138,10 +139,10 @@ function notes(ctx, a) {
   const busy = S.aiBusy['sum:' + a.id];
   const hasNotes = !!(a.data.note || '').trim() || (a.data.videoIds || []).some(v => { const n = ctx.store.get('note_' + v); return n && n.data.text && n.data.text.trim(); });
   return `<section class="card stack" aria-labelledby="sec-nt"><h3 id="sec-nt">Anotações</h3>
-    <label class="sr-only" for="st-note">Anotações do dia</label><textarea id="st-note" data-input="note" placeholder="Regras para decorar, dúvidas, o que caiu na prática…">${esc(a.data.note || '')}</textarea>
+    ${richEditor({ id: 'st-note', input: 'note', text: a.data.note, html: a.data.noteHtml, placeholder: 'Regras para decorar, dúvidas, o que caiu na prática…', label: 'Anotações do dia' })}
     <div class="row" style="justify-content:space-between"><b>Resumo</b><button class="btn sm" data-act="summarize" ${busy || !hasNotes ? 'disabled' : ''} title="${hasNotes ? '' : 'Escreva anotações primeiro'}">${busy ? icon('refresh-cw', 'spin') + 'Resumindo…' : icon('sparkles', 'sm') + (a.data.summary ? 'Resumir de novo' : 'Resumir com IA')}</button></div>
     ${S.aiErr['sum:' + a.id] ? `<div class="notice bad">${icon('triangle-alert')}<div>${esc(S.aiErr['sum:' + a.id])}</div></div>` : ''}
-    <label class="sr-only" for="st-sum">Resumo</label><textarea id="st-sum" data-input="summary" placeholder="${hasNotes ? 'O resumo organizado aparece aqui. Você pode editar.' : 'Escreva anotações (aqui ou nas aulas) para poder resumir.'}">${esc(a.data.summary || '')}</textarea></section>`;
+    ${richEditor({ id: 'st-sum', input: 'summary', text: a.data.summary, html: a.data.summaryHtml, placeholder: hasNotes ? 'O resumo organizado aparece aqui. Você pode editar e marcar.' : 'Escreva anotações (aqui ou nas aulas) para poder resumir.', label: 'Resumo' })}</section>`;
 }
 
 function record(ctx, a, plan) {
@@ -285,7 +286,7 @@ export const actions = {
     if ((a.data.note || '').trim()) parts.push('### Anotações gerais\n' + a.data.note.trim());
     if (!parts.length) return;
     S.aiBusy[key] = true; S.aiErr[key] = null; ctx.render();
-    try { const r = await ctx.ai.ask('summary', prompts.summary(sub ? sub.data.name : '', a.data.title, parts.join('\n\n')), { level: 'basic', check: t => t.trim().length > 20 }); await ctx.store.patch(a.id, { summary: r.text + (r.truncated ? '\n(texto cortado: resuma menos aulas por vez)' : '') }); }
+    try { const r = await ctx.ai.ask('summary', prompts.summary(sub ? sub.data.name : '', a.data.title, parts.join('\n\n')), { level: 'basic', check: t => t.trim().length > 20 }); await ctx.store.patch(a.id, { summary: r.text + (r.truncated ? '\n(texto cortado: resuma menos aulas por vez)' : ''), summaryHtml: '' }); }
     catch (err) { S.aiErr[key] = aiMessage(err); }
     S.aiBusy[key] = false; ctx.render();
   },
@@ -309,15 +310,15 @@ export const actions = {
 
 export const inputs = {
   title: (el, e, ctx) => saver(ctx, 'title:' + ctx.route.arg, (id, v) => ctx.store.patch(id, { title: v }, { origin: 'input' }))(ctx.route.arg, el.value),
-  note: (el, e, ctx) => saver(ctx, 'note:' + ctx.route.arg, (id, v) => ctx.store.patch(id, { note: v }, { origin: 'input' }))(ctx.route.arg, el.value),
-  summary: (el, e, ctx) => saver(ctx, 'sum:' + ctx.route.arg, (id, v) => ctx.store.patch(id, { summary: v }, { origin: 'input' }))(ctx.route.arg, el.value),
+  note: (el, e, ctx) => saver(ctx, 'note:' + ctx.route.arg, (id, v) => ctx.store.patch(id, { note: v.text, noteHtml: v.html }, { origin: 'input' }))(ctx.route.arg, sanitize(el)),
+  summary: (el, e, ctx) => saver(ctx, 'sum:' + ctx.route.arg, (id, v) => ctx.store.patch(id, { summary: v.text, summaryHtml: v.html }, { origin: 'input' }))(ctx.route.arg, sanitize(el)),
   num: (el, e, ctx) => saver(ctx, 'n:' + el.dataset.f + ctx.route.arg, (id, f, v) => ctx.store.patch(id, { [f]: v === '' ? null : Math.max(0, +v || 0) }, { origin: 'input' }))(ctx.route.arg, el.dataset.f, el.value),
   custom: (el, e, ctx) => saver(ctx, 'cf:' + el.dataset.cf + ctx.route.arg, (id, cf, v) => { const a = ctx.store.get(id); if (a) ctx.store.patch(id, { custom: { ...(a.data.custom || {}), [cf]: v } }, { origin: 'input' }); })(ctx.route.arg, el.dataset.cf, el.value),
   vnote: (el, e, ctx) => saver(ctx, 'vn:' + el.dataset.vid, async (vid, v) => {
     const id = 'note_' + vid; const cur = ctx.store.getRaw(id);
-    if (cur && !cur.deleted) await ctx.store.patch(id, { text: v }, { origin: 'input' });
-    else if (!cur) await ctx.store.put('note', id, ctx.planId, { target: vid, targetKind: 'video', text: v }, { origin: 'input' });
-  })(el.dataset.vid, el.value),
+    if (cur && !cur.deleted) await ctx.store.patch(id, { text: v.text, textHtml: v.html }, { origin: 'input' });
+    else if (!cur) await ctx.store.put('note', id, ctx.planId, { target: vid, targetKind: 'video', text: v.text, textHtml: v.html }, { origin: 'input' });
+  })(el.dataset.vid, sanitize(el)),
 };
 export const changes = {
   dvlevel: (el) => { S.doubtLevel = el.value; },
