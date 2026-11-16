@@ -27,7 +27,10 @@ export function render(ctx) {
   h += `<section class="card stack" aria-labelledby="aj-conta"><h2 id="aj-conta">Conta e sincronização</h2>`;
   if (!ctx.fbOn) h += `<div class="notice warn">${icon('cloud-off')}<div><b>A conta ainda não foi configurada.</b> Por enquanto tudo fica salvo só neste aparelho. Para usar em qualquer aparelho, é preciso criar o projeto no Firebase (passo a passo em docs/FIREBASE.md) e colar a configuração em js/config.js.</div></div>`;
   else if (ctx.user) h += `<div class="row"><span class="tag ok">${icon('circle-user', 'sm')}${esc(ctx.user.email || 'Conta Google')}</span><span class="sync" data-phase="${s.phase}" style="cursor:default"><span class="dot"></span>${esc(s.label)}</span></div><p class="small muted">${esc(s.detail)}</p>
-      <div class="row"><button class="btn" data-act="sync-now">${icon('refresh-cw')}Sincronizar agora</button><button class="btn" data-act="sign-out">${icon('log-out')}Sair da conta</button></div>`;
+      <div class="row"><button class="btn" data-act="sync-now">${icon('refresh-cw')}Sincronizar agora</button><button class="btn" data-act="sign-out">${icon('log-out')}Sair da conta</button></div>`
+    + (ctx.authApi && !ctx.authApi.hasPassword() ? `<div class="notice info">${icon('smartphone')}<div class="grow"><b>Vai usar o app instalado no iPhone?</b><div class="small">Lá o login com Google não abre. Crie uma senha para esta mesma conta e, no iPhone, entre com <b>${esc(ctx.user.email || '')}</b> e essa senha. É a mesma conta, com os mesmos dados.</div>
+      <div class="row" style="margin-top:8px"><label class="sr-only" for="pw-new">Nova senha</label><input id="pw-new" type="password" autocomplete="new-password" placeholder="Senha (mínimo 8 caracteres)" style="max-width:260px"><button class="btn sm primary" data-act="add-password">${icon('key-round', 'sm')}Criar senha</button></div>
+      ${S.pwMsg ? `<p class="small" role="status" style="margin-top:6px">${esc(S.pwMsg)}</p>` : ''}</div></div>` : (ctx.authApi && ctx.authApi.hasPassword() ? `<p class="small muted">${icon('key-round', 'sm')} Esta conta também entra com e-mail e senha.</p>` : ''));
   else h += `<p class="muted">Você está usando sem conta: os dados ficam só neste aparelho.</p><div class="row"><button class="btn primary" data-act="go-login">${icon('log-in')}Entrar ou criar conta</button></div><p class="hint">Ao entrar, você pode enviar o que está neste aparelho para a conta.</p>`;
   if (ctx.fbError) h += `<div class="notice bad">${icon('triangle-alert')}<div>${esc(ctx.fbError)}</div></div>`;
   h += '</section>';
@@ -104,6 +107,14 @@ async function setPref(ctx, k, v) {
 }
 
 export const actions = {
+  async 'add-password'(el, e, ctx) {
+    const pw = document.getElementById('pw-new').value;
+    if (pw.length < 8) { S.pwMsg = 'Use pelo menos 8 caracteres.'; ctx.render(true); return; }
+    el.disabled = true;
+    try { await ctx.authApi.addPassword(pw); S.pwMsg = ''; toast('Senha criada. No iPhone, entre com seu e-mail e essa senha.', { icon: 'key-round', ms: 7000 }); }
+    catch (err) { S.pwMsg = err && err.code === 'auth/operation-not-allowed' ? 'Falta ativar "E-mail/senha" no Firebase (Authentication > Método de login).' : ctx.authApi.authMessage(err); }
+    ctx.render(true);
+  },
   async 'cf-add'(el, e, ctx) {
     const inp = document.getElementById('cf-new'), name = inp.value.trim(); if (!name) { inp.focus(); return; }
     const plan = ctx.plan, list = plan.data.customFields || [], id = ids.customField(name);

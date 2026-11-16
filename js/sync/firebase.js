@@ -32,10 +32,25 @@ function isStandaloneIOS() {
 
 export async function signInGoogle() {
   if (!navigator.onLine) throw { code: 'app/offline' };
-  if (isStandaloneIOS()) throw { code: 'app/ios-standalone' };
   const provider = new fb.A.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  return fb.A.signInWithPopup(fb.auth, provider);
+  try { return await fb.A.signInWithPopup(fb.auth, provider); }
+  catch (e) { if (isStandaloneIOS() && e && e.code !== 'auth/popup-closed-by-user') throw { code: 'app/ios-standalone' }; throw e; }
+}
+export function isIOSApp() { return isStandaloneIOS(); }
+/** Senha para a mesma conta (útil no app do iPhone, onde o login com Google não abre). */
+let pwAdded = false;
+export function hasPassword() { const u = fb && fb.auth.currentUser; return pwAdded || !!(u && u.providerData.some(p => p.providerId === 'password')); }
+export async function addPassword(pass) {
+  if (!navigator.onLine) throw { code: 'app/offline' };
+  const u = fb.auth.currentUser; if (!u || !u.email) throw { code: 'auth/no-email' };
+  const cred = fb.A.EmailAuthProvider.credential(u.email, pass);
+  try { const r = await fb.A.linkWithCredential(u, cred); pwAdded = true; return r; }
+  catch (e) {
+    // em alguns casos o Firebase recusa o vínculo pelo próprio e-mail da conta; definir a senha direto resolve
+    if (e && (e.code === 'auth/email-already-in-use' || e.code === 'auth/credential-already-in-use')) { await fb.A.updatePassword(u, pass); pwAdded = true; try { await u.reload(); } catch (er) { /* ok */ } return; }
+    throw e;
+  }
 }
 export async function signInEmail(email, pass) { if (!navigator.onLine) throw { code: 'app/offline' }; return fb.A.signInWithEmailAndPassword(fb.auth, email.trim(), pass); }
 export async function signUpEmail(email, pass, name) {
@@ -51,7 +66,11 @@ export function authMessage(e) {
   const c = (e && e.code) || '';
   const M = {
     'app/offline': 'Entrar precisa de internet. Conecte-se e tente de novo. Seus dados deste aparelho continuam disponíveis.',
-    'app/ios-standalone': 'No app instalado do iPhone, o login com Google pode não abrir. Use e-mail e senha, ou entre pelo Safari uma vez.',
+    'app/ios-standalone': 'No app instalado do iPhone, o iOS bloqueia a janela do Google. Entre com e-mail e senha: no computador, já logado com o Google, vá em Ajustes > Conta e crie uma senha para a sua conta.',
+    'auth/provider-already-linked': 'Esta conta já tem senha.',
+    'auth/credential-already-in-use': 'Já existe outra conta com esse e-mail e senha.',
+    'auth/requires-recent-login': 'Por segurança, saia e entre de novo com o Google antes de criar a senha.',
+    'auth/no-email': 'Esta conta não tem e-mail.',
     'auth/popup-blocked': 'O navegador bloqueou a janela do Google. Permita pop-ups para este site ou use e-mail e senha.',
     'auth/popup-closed-by-user': 'A janela do Google foi fechada antes de terminar.',
     'auth/cancelled-popup-request': 'Login cancelado.',
