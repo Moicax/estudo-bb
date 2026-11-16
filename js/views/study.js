@@ -246,7 +246,9 @@ export const actions = {
     S.aiBusy[key] = true; S.aiErr[key] = null; ctx.render();
     const math = /matem/i.test(sub ? sub.data.name : '') && ctx.profile?.data.ai?.mathAdvanced !== false;
     try {
-      const r = await ctx.ai.ask('quiz', prompts.quiz(sub ? sub.data.name : '', a.data.title), { level: math ? 'adv' : 'basic', json: true, check: (v) => validQuestions(v).length >= 5 });
+      const lessons = (a.data.videoIds || []).map(id => ctx.store.get(id)).filter(Boolean).map(v => v.data.title);
+      const notesTxt = [a.data.summary, a.data.note, ...(a.data.videoIds || []).map(id => { const n = ctx.store.get('note_' + id); return n ? n.data.text : ''; })].filter(t => t && t.trim()).join('\n\n');
+      const r = await ctx.ai.ask('quiz', prompts.quiz(sub ? sub.data.name : '', a.data.title, { lessons, notes: notesTxt }), { level: math ? 'adv' : 'basic', json: true, check: (v) => validQuestions(v).length >= 5 });
       const items = validQuestions(r.value); const setId = rid('qs_'), now = Date.now(); const qids = [];
       for (const it of items) { const qid = rid('q_'); qids.push(qid); await ctx.store.put('question', qid, a.planId, { subjectId: a.data.subjectId, topic: a.data.title, stem: it.stem, options: it.options, answer: it.answer, explanation: it.explanation, source: { type: 'ia', provider: r.byName, activityId: a.id, createdOn: today() } }); }
       await ctx.store.put('quizSet', setId, a.planId, { activityId: a.id, questionIds: qids, provider: r.byName, createdOn: today(), createdAt: now });

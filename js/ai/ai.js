@@ -163,10 +163,19 @@ export function asData(label, text) {
 }
 
 export const prompts = {
-  quiz: (subject, topic) => 'Você é professor de concursos no Brasil. Crie 10 questões inéditas de múltipla escolha, no estilo da banca Cesgranrio, nível médio.\n'
-    + asData('Matéria', subject) + '\n' + asData('Tema', topic) + '\n'
-    + 'Regras: 5 alternativas, só uma correta; 3 fáceis, 4 médias e 3 difíceis; enunciados curtos; em matemática, contas que se resolvem sem calculadora; varie a posição da correta; use só fatos estáveis e, se não tiver certeza de um número ou data, mude a pergunta.\n'
-    + 'Responda SOMENTE com um array JSON de 10 objetos: {"e":"enunciado","a":["A","B","C","D","E"],"c":0,"x":"comentário de até 3 frases: por que a correta está certa e qual a pegadinha"}. "c" é o índice (0 a 4) da correta. Não coloque letras no início das alternativas.',
+  quiz: (subject, topic, ctx = {}) => {
+    const lessons = (ctx.lessons || []).filter(Boolean).slice(0, 12);
+    const notes = String(ctx.notes || '').slice(0, 3000);
+    return 'Você é professor de concursos no Brasil. Crie 10 questões inéditas de múltipla escolha, no estilo da banca Cesgranrio, nível médio.\n'
+    + asData('Matéria', subject) + '\n' + asData('Assunto estudado hoje', topic) + '\n'
+    + (lessons.length ? asData('Aulas do dia (títulos)', lessons.map(t => '- ' + t).join('\n')) + '\n' : '')
+    + (notes.trim() ? asData('Anotações do aluno sobre o assunto de hoje', notes) + '\n' : '')
+    + 'IMPORTANTE: todas as 10 questões devem ser SOMENTE sobre o assunto estudado hoje e os tópicos das aulas listadas acima. '
+    + 'Não cobre outros assuntos da matéria, mesmo que sejam comuns em prova. Se o assunto for amplo, distribua as questões entre os tópicos das aulas. '
+    + (notes.trim() ? 'Use as anotações para saber o que foi visto, mas cobre o conteúdo correto mesmo que a anotação tenha erro. ' : '')
+    + '\nRegras: 5 alternativas, só uma correta; 3 fáceis, 4 médias e 3 difíceis; enunciados curtos; em matemática, contas que se resolvem sem calculadora; varie a posição da correta; use só fatos estáveis e, se não tiver certeza de um número ou data, mude a pergunta.\n'
+    + 'Responda SOMENTE com um array JSON de 10 objetos: {"e":"enunciado","a":["A","B","C","D","E"],"c":0,"x":"comentário de até 3 frases: por que a correta está certa e qual a pegadinha"}. "c" é o índice (0 a 4) da correta. Não coloque letras no início das alternativas.';
+  },
   doubt: (subject, topic, q) => 'Você é professor de concursos no Brasil.\n' + asData('Matéria', subject) + '\n' + asData('Tema do dia', topic) + '\n' + asData('Dúvida do aluno', q) + '\n'
     + 'Responda em português do Brasil, direto e didático, em texto simples sem markdown (listas com hífen). Se houver conta, mostre o passo a passo. Termine com uma linha "Dica de prova:". Se não tiver certeza de um número, data ou artigo de lei, diga isso claramente. Até 250 palavras.',
   summary: (subject, topic, notes) => 'Organize as anotações de estudo abaixo.\n' + asData('Matéria', subject) + '\n' + asData('Tema', topic) + '\n' + asData('Anotações', notes) + '\n'
