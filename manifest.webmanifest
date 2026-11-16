@@ -1,0 +1,17 @@
+{
+  "name": "Meu Estudo BB",
+  "short_name": "Estudo BB",
+  "description": "Plano de estudo para Escriturário do Banco do Brasil: cronograma, vídeos, revisões, questões e dúvidas com IA.",
+  "lang": "pt-BR",
+  "start_url": "./#hoje",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#2457d6",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    {"src": "icon.svg", "sizes": "any", "type": "image/svg+xml"}
+  ]
+}
