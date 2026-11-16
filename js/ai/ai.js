@@ -10,7 +10,7 @@ import { hash, plain, today } from '../core/util.js';
 
 export const PRESETS = {
   openai: { label: 'OpenAI (GPT · pago por uso)', base: 'https://api.openai.com/v1', model: 'gpt-5-mini', keyUrl: 'https://platform.openai.com/api-keys' },
-  groq: { label: 'Groq (cota grátis com limite)', base: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', keyUrl: 'https://console.groq.com/keys' },
+  groq: { label: 'Groq (cota grátis com limite)', base: 'https://api.groq.com/openai/v1', model: 'openai/gpt-oss-120b', keyUrl: 'https://console.groq.com/keys', fallbacks: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'] },
   openrouter: { label: 'OpenRouter (modelos grátis com limite)', base: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct:free', keyUrl: 'https://openrouter.ai/keys' },
 };
 export const DEFAULT_KEYS = { gemKey: '', gemModel: 'gemini-flash-latest', gptPreset: 'openai', gptKey: '', gptBase: PRESETS.openai.base, gptModel: PRESETS.openai.model, claKey: '', claModel: 'claude-sonnet-5-5', order: 'gemini', limitDay: 80 };
@@ -55,7 +55,15 @@ export function createAI(store) {
     } },
     gpt: { name: () => ({ groq: 'Groq', openrouter: 'OpenRouter' })[keys().gptPreset] || 'GPT', ok: () => !!kv('gptKey'), async call(prompt, o) {
       const n = P.gpt.name();
-      const j = await post(n, (kv('gptBase') || PRESETS.openai.base).replace(/\/+$/, '') + '/chat/completions', { authorization: 'Bearer ' + kv('gptKey') }, { model: kv('gptModel'), messages: [{ role: 'user', content: prompt }] }, o.signal, o.timeout);
+      // se o modelo não existir mais ou estiver sobrecarregado, tenta os alternativos do serviço
+      const pre = PRESETS[keys().gptPreset] || {};
+      const models = [...new Set([kv('gptModel') || pre.model, ...(pre.fallbacks || [])].filter(Boolean))];
+      let j, lastErr;
+      for (const m of models) {
+        try { j = await post(n, (kv('gptBase') || PRESETS.openai.base).replace(/\/+$/, '') + '/chat/completions', { authorization: 'Bearer ' + kv('gptKey') }, { model: m, messages: [{ role: 'user', content: prompt }] }, o.signal, o.timeout); lastErr = null; break; }
+        catch (e) { lastErr = e; if (e.code === 'bad_key' || !(e.status === 404 || e.status === 503 || /does not exist|not found|decommissioned|no access|over capacity|overloaded/i.test(e.message || ''))) throw e; }
+      }
+      if (lastErr) throw lastErr;
       const c = j && j.choices && j.choices[0]; const t = (c && c.message && c.message.content) || '';
       if (!t) throw { code: 'empty', provider: n };
       return { text: t, truncated: c.finish_reason === 'length' };
