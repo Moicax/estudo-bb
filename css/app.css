@@ -339,3 +339,6 @@ html[data-motion="reduce"] *, html[data-motion="reduce"] *::before, html[data-mo
   html:not([data-motion="full"]) *, html:not([data-motion="full"]) *::before, html:not([data-motion="full"]) *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
 }
 .divider:empty { gap: 0; }
+.ai-usage { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 6px; line-height: 1.5; }
+.ai-usage .ico { vertical-align: -3px; }
+.side-foot .ai-usage { margin: 0 8px; font-size: 12px; }

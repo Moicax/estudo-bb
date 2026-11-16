@@ -101,7 +101,9 @@ export function createAI(store) {
           let value;
           if (o.json) { value = parseLoose(r.text); if (value == null || (o.check && !o.check(value))) throw { code: 'invalid', provider: P[k].name() }; }
           else if (o.check && !o.check(r.text)) throw { code: 'invalid', provider: P[k].name() };
-          return { text: o.json ? r.text : plain(r.text), value, truncated: !!r.truncated, by: k, byName: P[k].name() };
+          const ub = store.getMeta('aiUsageBy:' + today()) || {}; const nm = P[k].name(); ub[nm] = (ub[nm] || 0) + 1;
+          await store.setMeta('aiUsageBy:' + today(), ub);
+          return { text: o.json ? r.text : plain(r.text), value, truncated: !!r.truncated, by: k, byName: nm };
         } catch (e) {
           if (e && e.code === 'cancelled') throw e;
           errs.push({ provider: P[k].name(), ...(e || {}) });
@@ -123,6 +125,8 @@ export function createAI(store) {
 
   return {
     ask, test, route, usage, keys,
+    usageBy: () => store.getMeta('aiUsageBy:' + today()) || {},
+    limit: () => +keys().limitDay || DEFAULT_KEYS.limitDay,
     providers: () => Object.keys(P).map(k => ({ id: k, name: P[k].name(), ok: P[k].ok() })),
     hasAny: () => Object.keys(P).some(k => P[k].ok()),
     routeNames: (level) => route(level).map(k => P[k].name()).join(', depois ') || 'nenhuma configurada',

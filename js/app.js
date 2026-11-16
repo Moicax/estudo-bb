@@ -1,6 +1,6 @@
 // Ponto de entrada: inicia conta/armazenamento, desenha a moldura (navegação) e as telas.
 import { SPRITE } from './ui/icons.js';
-import { icon, esc, toast, openDialog, confirmDialog, celebrate, closeAllDialogs, $ } from './ui/dom.js';
+import { icon, esc, toast, openDialog, confirmDialog, celebrate, closeAllDialogs, $, aiUsageLine } from './ui/dom.js';
 import { FIREBASE_CONFIG, EMULATOR_CONFIG, emulatorMode, APP_VERSION } from './config.js';
 import { openStore, deleteScope } from './data/store.js';
 import { createAI } from './ai/ai.js';
@@ -85,7 +85,7 @@ function shell() {
     <div class="brand"><span class="brand-mark">${icon('book-open')}</span>Meu Estudo</div>
     <div class="plan-card" id="plan-card"></div>
     <nav class="nav" id="side-nav"></nav>
-    <div class="side-foot">${syncButton()}<a class="btn ghost sm" href="#ajustes" style="justify-content:flex-start" id="side-account">${icon('circle-user', 'sm')}<span>Conta</span></a></div>
+    <div class="side-foot"><p class="ai-usage small muted" id="side-ai"></p>${syncButton()}<a class="btn ghost sm" href="#ajustes" style="justify-content:flex-start" id="side-account">${icon('circle-user', 'sm')}<span>Conta</span></a></div>
   </aside>
   <div class="content">
     <header class="topbar" id="topbar"><div class="brand"><span class="brand-mark">${icon('book-open')}</span><span id="top-title">Meu Estudo</span></div>${syncButton()}</header>
@@ -108,6 +108,7 @@ function paintChrome() {
   }
   $('#plan-card').innerHTML = plan ? `<div class="eyebrow">Plano atual</div><b>${esc(plan.data.name)}</b><div class="small muted">${esc(exam)}</div>` : '<div class="small muted">Nenhum plano ainda</div>';
   const acc = $('#side-account span'); if (acc) acc.textContent = ctx.user ? (ctx.user.email || 'Conta') : (ctx.fbOn ? 'Entrar' : 'Ajustes');
+  const sa = $('#side-ai'); if (sa) sa.innerHTML = aiUsageLine(ctx.ai);
   paintSync();
 }
 

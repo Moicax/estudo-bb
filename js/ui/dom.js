@@ -114,3 +114,12 @@ export function debounce(fn, ms) {
   f.flush = () => { if (t) { clearTimeout(t); t = null; fn(...last); } };
   return f;
 }
+
+/** Linha discreta com o uso de IA de hoje neste aparelho. */
+export function aiUsageLine(ai) {
+  if (!ai) return '';
+  if (!ai.hasAny()) return `<span>${icon('sparkles', 'sm')} IA não configurada · <a href="#ajustes">configurar</a></span>`;
+  const by = ai.usageBy(), parts = ai.providers().filter(p => p.ok).map(p => `${esc(p.name)} ${by[p.name] || 0}`);
+  for (const k of Object.keys(by)) if (!ai.providers().some(p => p.ok && p.name === k)) parts.push(`${esc(k)} ${by[k]}`);
+  return `<span title="Pedidos respondidos hoje por cada IA, neste aparelho. Limite diário ajustável em Ajustes.">${icon('sparkles', 'sm')} IA hoje: ${parts.join(' · ')} <span class="muted">(${ai.usage()} de ${ai.limit()} pedidos)</span></span>`;
+}

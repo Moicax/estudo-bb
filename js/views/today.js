@@ -1,5 +1,5 @@
 // Hoje: o que estudar, qual a próxima ação, como estou avançando.
-import { icon, esc, chip, bar, empty } from '../ui/dom.js';
+import { icon, esc, chip, bar, empty, aiUsageLine } from '../ui/dom.js';
 import { today, fmtLong, fmtShort, fmtDur, DIAS, weekday, pct } from '../core/util.js';
 import { todayPlan, dueReviews, progress, subjectMap, weekOf, planWeeks, isRest, activeSession, sessionElapsed } from '../domain/study.js';
 
@@ -74,5 +74,6 @@ export function render(ctx) {
     <div class="stat"><span class="v">${pr.videosWatched}<span class="muted" style="font-size:.9rem;font-weight:600"> / ${pr.videosTotal}</span></span><span class="l">aulas assistidas · ${fmtDur(pr.watchedSec)}</span>${bar(pr.videosTotal ? pr.videosWatched / pr.videosTotal : 0, 'thin', 't-vid')}</div>
     <div class="stat"><span class="v">${acc == null ? '—' : pct(pr.correct, pr.questions) + '%'}</span><span class="l">${pr.questions ? `de acerto em ${pr.questions} questões${pr.questions < 30 ? ' · <span class="tag warn">poucas respostas</span>' : ''}` : 'faça questões para medir o acerto'}</span>${acc == null ? '' : bar(acc, 'thin ' + (acc < .5 ? 'bad' : acc < .7 ? 'warn' : ''), 't-acc')}</div>
   </div>`;
+  h += `<p class="ai-usage small muted">${aiUsageLine(ctx.ai)}</p>`;
   return h;
 }
