@@ -36,9 +36,9 @@ export function render(ctx) {
       <div style="margin:-2px 2px 8px">${bar(real.length ? done / real.length : 0, 'thin', 'wk' + w)}</div><div class="list">`;
     for (const a of list) {
       const s = subs[a.data.subjectId], rest = isRest(s), isDone = a.data.status === 'done', nv = (a.data.videoIds || []).length;
-      h += `<div class="item clickable ${isDone ? 'done' : ''}" data-act="open" data-id="${esc(a.id)}">
+      h += `<div class="item clickable agenda-item ${isDone ? 'done' : ''}">
         <div class="date-block ${a.data.date === t ? 'today' : ''}"><b>${a.data.date.slice(8)}</b><span>${DIAS[weekday(a.data.date)]}</span></div>
-        <div class="body"><span class="title clamp2">${esc(a.data.title || '(sem tema)')}</span><span class="sub">${chip(s)}${nv ? `<span>${icon('circle-play', 'sm')} ${nv}</span>` : ''}${a.data.note ? `<span title="Tem anotações">${icon('pencil', 'sm')}</span>` : ''}${a.data.status === 'doing' ? '<span class="tag info">Estudando</span>' : ''}${!isDone && !rest && a.data.date < t ? '<span class="tag">em aberto</span>' : ''}</span></div>
+        <div class="body"><a class="title clamp2" data-act="open" href="#estudo/${esc(encodeURIComponent(a.id))}">${esc(a.data.title || '(sem tema)')}</a><span class="sub">${chip(s)}${nv ? `<span>${icon('circle-play', 'sm')} ${nv}</span>` : ''}${a.data.note ? `<span title="Tem anotações">${icon('pencil', 'sm')}</span>` : ''}${a.data.status === 'doing' ? '<span class="tag info">Estudando</span>' : ''}${!isDone && !rest && a.data.date < t ? '<span class="tag">em aberto</span>' : ''}</span></div>
         ${rest ? `<span class="tag">${icon('moon', 'sm')}Folga</span>` : `<button class="done-btn" data-act="toggle-done" data-id="${esc(a.id)}" aria-pressed="${isDone}" data-flash="done:${esc(a.id)}" aria-label="${isDone ? 'Desmarcar' : 'Concluir'}: ${esc(a.data.title)}">${icon('check')}</button>`}</div>`;
     }
     h += '</div>';
@@ -52,7 +52,6 @@ export function after(ctx, view) {
 }
 
 export const actions = {
-  open(el, e, ctx) { if (e.target.closest('.done-btn')) return; ctx.go('estudo', el.dataset.id); },
   mode(el, e, ctx) { F.mode = el.dataset.v; ctx.render(); },
   add(el, e, ctx) {
     const P = ctx.planId, subs = subjectsOf(ctx.store, P);

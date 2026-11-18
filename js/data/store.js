@@ -45,7 +45,9 @@ export async function openStore(scope) {
 export class Store {
   constructor(scope, db) {
     this.scope = scope; this.db = db; this.recs = new Map(); this.meta = new Map(); this.subs = new Set(); this.closed = false;
-    db.onversionchange = () => { db.close(); this.closed = true; };
+    this.channel = typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(db.name) : null;
+    if (this.channel) this.channel.onmessage = ({ data }) => this._refresh(data).catch(e => { if (!this.closed) console.error(e); });
+    db.onversionchange = () => this.close();
   }
   async _load() {
     const tx = this.db.transaction(['records', 'meta'], 'readonly');
@@ -80,11 +82,47 @@ export class Store {
   _emit(ev) { for (const f of this.subs) { try { f(ev); } catch (e) { console.error(e); } } }
 
   /* ---------- escrita local ---------- */
-  async _writeMany(list) {
+  async _refresh(ids) {
+    if (this.closed || !Array.isArray(ids) || !ids.length) return;
+    const records = this.db.transaction('records').objectStore('records');
+    const rows = await Promise.all(ids.map(id => req(records.get(id))));
+    const changed = [];
+    for (const r of rows) if (r && !deepEqual(r, this.recs.get(r.id))) {
+      this.recs.set(r.id, r);
+      changed.push(r.id);
+    }
+    if (changed.length) this._emit({ type: 'change', ids: changed, origin: 'other-tab' });
+  }
+
+  // A leitura e a gravação compartilham a transação, inclusive entre abas.
+  // A memória e os observadores só recebem a mudança depois da confirmação.
+  async _editRecords(origin, edit) {
     if (this.closed) throw new Error('Banco fechado');
-    const tx = this.db.transaction('records', 'readwrite'); const st = tx.objectStore('records');
-    for (const r of list) st.put(r);
-    await txDone(tx);
+    const tx = this.db.transaction('records', 'readwrite');
+    const st = tx.objectStore('records'), writes = new Map(), reads = new Map();
+    const get = async id => {
+      if (writes.has(id)) return writes.get(id);
+      if (!reads.has(id)) reads.set(id, await req(st.get(id)));
+      return reads.get(id);
+    };
+    const save = r => { writes.set(r.id, r); return r; };
+    const done = txDone(tx);
+    const update = async () => {
+      const result = await edit(get, save);
+      for (const r of writes.values()) st.put(r);
+      return result;
+    };
+    let result;
+    try { [result] = await Promise.all([update(), done]); }
+    catch (e) { try { tx.abort(); } catch { /* transação já encerrada */ } throw e; }
+    for (const r of reads.values()) if (r) this.recs.set(r.id, r);
+    for (const r of writes.values()) this.recs.set(r.id, r);
+    if (writes.size) {
+      const ids = [...writes.keys()];
+      if (!this.closed) this.channel?.postMessage(ids);
+      this._emit({ type: 'change', ids, origin });
+    }
+    return result;
   }
   _touch(r, prev) {
     const l = prev && prev._l ? prev._l : { dirty: false, base: prev ? prev.rev || 0 : 0, baseData: prev && prev.rev ? clone(prev.data) : null, seq: 0 };
@@ -95,31 +133,28 @@ export class Store {
   }
   /** Cria ou substitui os dados de um registro. */
   async put(kind, id, planId, data, { origin = 'local' } = {}) {
-    const prev = this.recs.get(id);
-    if (prev && prev.deleted) throw new Error('Este item foi excluído e não pode ser recriado com o mesmo id.');
-    const r = this._touch({ ...(prev ? publicRecord(prev) : makeRecord(kind, id, planId, {})), kind, planId: planId || null, data: clone(data), deleted: false }, prev);
-    r.rev = prev ? prev.rev || 0 : 0;
-    this.recs.set(id, r); await this._writeMany([r]);
-    this._emit({ type: 'change', ids: [id], origin });
-    return r;
+    return this._editRecords(origin, async (get, save) => {
+      const prev = await get(id);
+      if (prev?.deleted) throw new Error('Este item foi excluído e não pode ser recriado com o mesmo id.');
+      const r = prev ? publicRecord(prev) : makeRecord(kind, id, planId, {});
+      return save(this._touch({ ...r, kind, planId: planId || null, data: clone(data), deleted: false }, prev));
+    });
   }
   async patch(id, partial, { origin = 'local' } = {}) {
-    const prev = this.recs.get(id);
-    if (!prev || prev.deleted) return null;
-    const data = { ...prev.data, ...clone(partial) };
-    if (deepEqual(data, prev.data)) return prev;
-    const r = this._touch({ ...publicRecord(prev), data }, prev);
-    this.recs.set(id, r); await this._writeMany([r]);
-    this._emit({ type: 'change', ids: [id], origin });
-    return r;
+    return this._editRecords(origin, async (get, save) => {
+      const prev = await get(id);
+      if (!prev || prev.deleted) return null;
+      const changes = typeof partial === 'function' ? partial(prev.data) : partial;
+      const data = { ...prev.data, ...clone(changes) };
+      if (deepEqual(data, prev.data)) return prev;
+      return save(this._touch({ ...publicRecord(prev), data }, prev));
+    });
   }
   async remove(id, { origin = 'local' } = {}) {
-    const prev = this.recs.get(id);
-    if (!prev || prev.deleted) return;
-    // o marcador de exclusão guarda só o mínimo: o conteúdo some de verdade
-    const r = this._touch({ ...publicRecord(prev), deleted: true, data: { removedKind: prev.kind } }, prev);
-    this.recs.set(id, r); await this._writeMany([r]);
-    this._emit({ type: 'change', ids: [id], origin });
+    await this._editRecords(origin, async (get, save) => {
+      const prev = await get(id);
+      if (prev && !prev.deleted) save(this._touch({ ...publicRecord(prev), deleted: true, data: { removedKind: prev.kind } }, prev));
+    });
   }
 
   /**
@@ -127,71 +162,79 @@ export class Store {
    * sem perder edições mais novas. Idempotente: importar o mesmo conteúdo de novo não muda nada.
    */
   async importRecords(list, { origin = 'import' } = {}) {
-    const writes = []; let added = 0, merged = 0, unchanged = 0, versions = 0;
-    for (const inc of list) {
-      const prev = this.recs.get(inc.id);
-      if (!prev) {
-        if (inc.deleted) { const r = this._touch({ ...publicRecord(inc), rev: 0 }, null); r.updatedAt = inc.updatedAt || r.updatedAt; this.recs.set(r.id, r); writes.push(r); added++; continue; }
-        const r = this._touch({ ...publicRecord(inc), rev: 0 }, null); r.updatedAt = inc.updatedAt || r.updatedAt; r.updatedBy = inc.updatedBy || r.updatedBy;
-        this.recs.set(r.id, r); writes.push(r); added++; continue;
-      }
-      if (prev.deleted) { unchanged++; continue; } // exclusão vence
-      if (inc.deleted) {
-        const r = this._touch({ ...publicRecord(prev), deleted: true, data: { removedKind: prev.kind } }, prev);
-        this.recs.set(r.id, r); writes.push(r); merged++; continue;
-      }
-      const m = mergeRecord(prev.kind, null, { data: prev.data, deleted: false, updatedAt: prev.updatedAt }, { data: inc.data, deleted: false, updatedAt: inc.updatedAt || 0 });
-      for (const v of m.versions.filter(v => v.side === 'remote')) {
-        const vid = versionId(prev.id, v.field, v.text);
-        if (!this.recs.get(vid)) {
-          const vr = this._touch(makeRecord('version', vid, prev.planId, { targetId: prev.id, targetKind: prev.kind, field: v.field, text: v.text, at: Date.now(), reason: 'importacao' }), null);
-          this.recs.set(vid, vr); writes.push(vr); versions++;
+    return this._editRecords(origin, async (get, save) => {
+      let added = 0, merged = 0, unchanged = 0, versions = 0;
+      for (const inc of list) {
+        const prev = await get(inc.id);
+        if (!prev) {
+          const r = this._touch({ ...publicRecord(inc), rev: 0 }, null);
+          r.updatedAt = inc.updatedAt || r.updatedAt;
+          if (!inc.deleted) r.updatedBy = inc.updatedBy || r.updatedBy;
+          save(r); added++; continue;
         }
+        if (prev.deleted) { unchanged++; continue; }
+        if (inc.deleted) {
+          save(this._touch({ ...publicRecord(prev), deleted: true, data: { removedKind: prev.kind } }, prev));
+          merged++; continue;
+        }
+        const m = mergeRecord(prev.kind, null, prev, inc);
+        for (const v of m.versions.filter(v => v.side === 'remote')) {
+          const vid = versionId(prev.id, v.field, v.text);
+          if (await get(vid)) continue;
+          save(this._touch(makeRecord('version', vid, prev.planId, { targetId: prev.id, targetKind: prev.kind, field: v.field, text: v.text, at: Date.now(), reason: 'importacao' }), null));
+          versions++;
+        }
+        if (deepEqual(m.data, prev.data)) { unchanged++; continue; }
+        save(this._touch({ ...publicRecord(prev), data: m.data }, prev));
+        merged++;
       }
-      if (deepEqual(m.data, prev.data)) { unchanged++; continue; }
-      const r = this._touch({ ...publicRecord(prev), data: m.data }, prev);
-      this.recs.set(r.id, r); writes.push(r); merged++;
-    }
-    if (writes.length) { await this._writeMany(writes); this._emit({ type: 'change', ids: writes.map(w => w.id), origin }); }
-    return { added, merged, unchanged, versions };
+      return { added, merged, unchanged, versions };
+    });
   }
 
   /* ---------- sincronização ---------- */
-  /** Registro recebido da conta. Se não há edição local pendente, substitui; se há, o envio resolve o conflito. */
+  /** Uma edição local pendente será conciliada durante o envio. */
   async applyRemote(docs) {
-    const writes = [];
-    for (const d of docs) {
-      const prev = this.recs.get(d.id);
-      if (prev && prev._l && prev._l.dirty) { prev._l.remoteRev = Math.max(prev._l.remoteRev || 0, d.rev || 0); writes.push(prev); continue; }
-      if (prev && (prev.rev || 0) >= (d.rev || 0)) continue; // já temos essa revisão (ou mais nova)
-      const r = { ...publicRecord(d), _l: { dirty: false, base: d.rev || 0, baseData: null, seq: prev && prev._l ? prev._l.seq || 0 : 0 } };
-      this.recs.set(r.id, r); writes.push(r);
-    }
-    if (writes.length) { await this._writeMany(writes); this._emit({ type: 'change', ids: writes.map(w => w.id), origin: 'remote' }); }
+    await this._editRecords('remote', async (get, save) => {
+      for (const d of docs) {
+        const prev = await get(d.id);
+        if (prev?._l?.dirty) {
+          if ((d.rev || 0) > (prev._l.remoteRev || 0)) save({ ...prev, _l: { ...prev._l, remoteRev: d.rev } });
+          continue;
+        }
+        if (prev && (prev.rev || 0) >= (d.rev || 0)) continue;
+        save({ ...publicRecord(d), _l: { dirty: false, base: d.rev || 0, baseData: null, seq: prev?._l?.seq || 0 } });
+      }
+    });
   }
-  /** Confirma que a versão enviada foi aceita pela conta. Se houve edição durante o envio, continua pendente. */
+  /** Só limpa a edição pendente se ela ainda for a mesma que foi enviada. */
   async markSynced(results) {
-    const writes = []; const created = [];
-    for (const x of results) {
-      const cur = this.recs.get(x.id); if (!cur) continue;
-      if (cur._l && cur._l.seq !== x.seq) {
-        // editado enquanto enviava: a nova base é o que foi aceito
-        cur.rev = x.rev; cur._l = { ...cur._l, base: x.rev, baseData: clone(x.data), dirty: true };
-        if (x.deleted && !cur.deleted) { cur.deleted = true; cur.data = x.data; cur._l.dirty = false; }
-      } else {
-        cur.rev = x.rev; cur.data = clone(x.data); cur.deleted = !!x.deleted; cur.updatedAt = x.updatedAt; cur.updatedBy = x.updatedBy;
-        cur._l = { dirty: false, base: x.rev, baseData: null, seq: cur._l ? cur._l.seq : 0 };
+    return this._editRecords('sync', async (get, save) => {
+      const created = [];
+      for (const x of results) {
+        const cur = await get(x.id);
+        if (!cur) continue;
+        if ((cur.rev || 0) < x.rev) {
+          if (cur._l && cur._l.seq !== x.seq) {
+            cur.rev = x.rev;
+            cur._l = { ...cur._l, base: x.rev, baseData: clone(x.data), dirty: true };
+            if (x.deleted && !cur.deleted) { cur.deleted = true; cur.data = x.data; cur._l.dirty = false; }
+          } else {
+            cur.rev = x.rev; cur.data = clone(x.data); cur.deleted = !!x.deleted;
+            cur.updatedAt = x.updatedAt; cur.updatedBy = x.updatedBy;
+            cur._l = { dirty: false, base: x.rev, baseData: null, seq: cur._l?.seq || 0 };
+          }
+          save(cur);
+        }
+        for (const v of x.versions || []) {
+          const vid = versionId(cur.id, v.field, v.text);
+          if (await get(vid)) continue;
+          save(this._touch(makeRecord('version', vid, cur.planId, { targetId: cur.id, targetKind: cur.kind, field: v.field, text: v.text, at: Date.now(), reason: 'conflito' }), null));
+          created.push(vid);
+        }
       }
-      writes.push(cur);
-      for (const v of x.versions || []) {
-        const vid = versionId(cur.id, v.field, v.text);
-        if (this.recs.get(vid)) continue;
-        const vr = this._touch(makeRecord('version', vid, cur.planId, { targetId: cur.id, targetKind: cur.kind, field: v.field, text: v.text, at: Date.now(), reason: 'conflito' }), null);
-        this.recs.set(vid, vr); writes.push(vr); created.push(vid);
-      }
-    }
-    if (writes.length) { await this._writeMany(writes); this._emit({ type: 'change', ids: writes.map(w => w.id), origin: 'sync' }); }
-    return created;
+      return created;
+    });
   }
 
   /* ---------- metadados e cópias de segurança ---------- */
@@ -218,5 +261,5 @@ export class Store {
     for (const r of this.recs.values()) if (includeDeleted || !r.deleted) out.push(publicRecord(r));
     return out;
   }
-  close() { try { this.db.close(); } catch (e) { /* já fechado */ } this.closed = true; this.subs.clear(); }
+  close() { this.channel?.close(); this.db.close(); this.closed = true; this.subs.clear(); }
 }

@@ -41,12 +41,15 @@ export function render(ctx) {
       <div class="actions"><button class="btn primary lg" data-act="go" data-to="estudo" data-arg="${esc(a.id)}">${icon('play')}${started ? 'Continuar estudo' : 'Começar estudo'}</button>
       <button class="btn lg" data-act="toggle-done" data-id="${esc(a.id)}">${icon('check')}Marcar como concluída</button></div></section>`;
   } else {
-    const n = tp.nextUpcoming;
-    const title = tp.restToday ? 'Hoje é dia de folga' : tp.todays.length ? 'Atividade de hoje concluída' : 'Nada marcado para hoje';
-    const msg = tp.restToday ? 'Descansar também faz parte do plano.' : tp.todays.length ? 'Bom trabalho. Se quiser adiantar, a próxima já está aqui.' : 'Aproveite para revisar ou adiantar a próxima atividade.';
-    hero = `<section class="hero" aria-labelledby="hero-t"><div class="row"><span class="tag ok">${icon(tp.restToday ? 'moon' : 'circle-check', 'sm')}${tp.restToday ? 'Folga' : 'Em dia'}</span></div>
-      <h2 id="hero-t">${title}</h2><p class="muted">${msg}</p>
-      ${n ? `<div class="card flat" style="margin-top:14px;background:var(--surface-2)"><div class="row">${chip(subs[n.data.subjectId])}<span class="small muted">${DIAS[weekday(n.data.date)]} ${fmtShort(n.data.date)}</span></div><p style="margin-top:6px;font-weight:650">${esc(n.data.title)}</p>
+    const n = tp.nextUpcoming, overdue = tp.overdue[0];
+    const badge = tp.restToday ? 'Folga' : tp.todays.length ? 'Hoje concluído' : 'Sem atividade hoje';
+    const title = tp.restToday ? 'Hoje é dia de folga' : tp.todays.length ? 'Você concluiu o que estava marcado para hoje' : 'Nada marcado para hoje';
+    const msg = tp.restToday ? 'Descansar também faz parte do plano.' : overdue ? 'Se quiser continuar, há uma atividade de um dia anterior.' : n ? 'Sua próxima atividade já está na agenda.' : '';
+    hero = `<section class="hero" aria-labelledby="hero-t"><div class="row"><span class="tag ok">${icon(tp.restToday ? 'moon' : 'circle-check', 'sm')}${badge}</span></div>
+      <h2 id="hero-t">${title}</h2>${msg ? `<p class="muted">${msg}</p>` : ''}
+      ${overdue ? `<div class="meta">${chip(subs[overdue.data.subjectId])}<span>${fmtShort(overdue.data.date)} · ${esc(overdue.data.title)}</span></div>
+      <div class="actions"><button class="btn primary" data-act="go" data-to="estudo" data-arg="${esc(overdue.id)}">${icon('play')}Retomar pendência</button>
+      ${n ? `<button class="btn" data-act="go" data-to="estudo" data-arg="${esc(n.id)}" title="${esc(n.data.title)}">Adiantar próxima</button>` : ''}</div>` : n ? `<div class="card flat" style="margin-top:14px;background:var(--surface-2)"><div class="row">${chip(subs[n.data.subjectId])}<span class="small muted">${DIAS[weekday(n.data.date)]} ${fmtShort(n.data.date)}</span></div><p style="margin-top:6px;font-weight:650">${esc(n.data.title)}</p>
       <div class="actions" style="margin-top:10px"><button class="btn soft" data-act="go" data-to="estudo" data-arg="${esc(n.id)}">${icon('play')}Adiantar esta atividade</button></div></div>` : ''}</section>`;
   }
   h += hero;

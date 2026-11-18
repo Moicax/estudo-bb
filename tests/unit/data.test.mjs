@@ -12,6 +12,29 @@ import { addDays, today, diffDays, fmtLong } from '../../js/core/util.js';
 const legacyFixture = JSON.parse(fs.readFileSync(new URL('./fixtures/legacy-state.json', import.meta.url)));
 const legacySets = JSON.parse(fs.readFileSync(new URL('./fixtures/legacy-sets.json', import.meta.url)));
 
+test('duas abas preservam campos distintos e uma confirmação antiga não apaga a edição pendente', async () => {
+  const scope = 'teste-duas-abas';
+  await deleteScope(scope);
+  const primeira = await openStore(scope);
+  await primeira.put('activity', 'atividade', 'plano', { note: '', difficulty: null });
+  const segunda = await openStore(scope);
+  try {
+    const enviada = primeira.get('atividade');
+    await Promise.all([
+      primeira.patch('atividade', { note: 'Regra do edital' }),
+      segunda.patch('atividade', { difficulty: 4 }),
+    ]);
+    await segunda.markSynced([{ id: enviada.id, seq: enviada._l.seq, rev: 1, data: enviada.data, updatedAt: enviada.updatedAt, updatedBy: enviada.updatedBy }]);
+    const atual = segunda.get('atividade');
+    assert.deepEqual(atual.data, { note: 'Regra do edital', difficulty: 4 });
+    assert.equal(atual._l.dirty, true);
+    await primeira.remove('atividade');
+    assert.equal(await segunda.patch('atividade', { difficulty: 1 }), null);
+  } finally {
+    primeira.close(); segunda.close(); await deleteScope(scope);
+  }
+});
+
 test('datas civis não mudam de dia com fuso', () => {
   const saved = process.env.TZ;
   for (const tz of ['America/Maceio', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'UTC']) {

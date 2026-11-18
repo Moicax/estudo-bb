@@ -142,8 +142,8 @@ export function legacyToRecords(state, sets, tpl) {
   for (const x of state.sims || []) {
     if (!x) continue;
     push('simulation', 'sim_' + hash([x.date, x.nome, x.acertos, x.total, x.obs].join('|')), {
-      date: isCivilDate(x.date) ? x.date : civilOf(T), name: x.nome || 'Simulado', correct: x.acertos === '' ? null : +x.acertos || 0,
-      total: x.total === '' ? null : +x.total || 0, notes: x.obs || '',
+      date: isCivilDate(x.date) ? x.date : civilOf(T), name: x.nome || 'Simulado', correct: x.acertos == null || x.acertos === '' ? null : +x.acertos || 0,
+      total: x.total == null || x.total === '' ? null : +x.total || 0, notes: x.obs || '',
     });
   }
   return out;

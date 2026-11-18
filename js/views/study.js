@@ -1,7 +1,7 @@
 // Estudar: a atividade do dia com aulas, foco, prática, dúvidas, anotações e registro.
 import { icon, esc, chip, empty, debounce, openDialog, confirmDialog, toast, chime, $ } from '../ui/dom.js';
 import { today, fmtShort, fmtLong, fmtDur, fmtClock, rid, safeUrl, isCivilDate } from '../core/util.js';
-import { subjectMap, subjectsOf, watched, activeSession, sessionElapsed, sessionStart, sessionPause, sessionResume, sessionStop, sessionAutoFinish, focusSecondsOf, weekOf } from '../domain/study.js';
+import { subjectMap, subjectsOf, watched, activeSession, sessionElapsed, sessionStart, sessionPause, sessionResume, sessionStop, sessionAutoFinish, focusSecondsOf, weekOf, scoreError } from '../domain/study.js';
 import { STATUS, ERROR_REASONS } from '../data/schema.js';
 import { richEditor, sanitize } from '../ui/rich.js';
 import { prompts, validQuestions, aiMessage, isAdvanced } from '../ai/ai.js';
@@ -10,8 +10,13 @@ const S = { openNotes: new Set(), aiBusy: {}, aiErr: {}, doubtLevel: 'auto', sho
 const GRAN = 'https://questoes.grancursosonline.com.br/concursos';
 const savers = new Map();
 function saver(ctx, key, fn) { if (!savers.has(key)) savers.set(key, debounce(fn, 400)); return savers.get(key); }
-addEventListener('pagehide', () => { for (const s of savers.values()) s.flush(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') for (const s of savers.values()) s.flush(); });
+function flushEdits() {
+  const field = document.activeElement;
+  if (field?.matches('input[data-change="score"]') && field.value !== field.defaultValue) field.dispatchEvent(new Event('change', { bubbles: true }));
+  for (const s of savers.values()) s.flush();
+}
+addEventListener('pagehide', flushEdits);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushEdits(); });
 
 function act(ctx) { const a = ctx.store.get(ctx.route.arg); return a && !ctx.hiddenIds.has(a.id) ? a : null; }
 
@@ -60,10 +65,10 @@ function lessons(ctx, a) {
     const w = watched(ctx.store, v.id), n = ctx.store.get('note_' + v.id), open = S.openNotes.has(v.id);
     h += `<div class="vid"><button class="done-btn" style="width:34px;height:34px" data-act="watch" data-vid="${esc(v.id)}" aria-pressed="${w}" data-flash="w:${esc(v.id)}" aria-label="${w ? 'Desmarcar' : 'Marcar'} como assistida: ${esc(v.data.title)}">${icon('check', 'sm')}</button>
       <div class="t"><b>${esc(v.data.title)}</b><small>${esc(v.data.channel || '')}${v.data.durationSec ? ' · ' + fmtClock(v.data.durationSec) : ''}${n && n.data.text ? ' · com anotação' : ''}</small></div>
-      <div class="vid-acts row tight"><button class="btn sm ghost icon" data-act="vnote" data-vid="${esc(v.id)}" aria-expanded="${open}" aria-label="Anotações desta aula">${icon('pencil', 'sm')}</button>
+      <div class="vid-acts row tight"><button class="btn sm" data-act="vnote" data-vid="${esc(v.id)}" aria-expanded="${open}" aria-controls="vn-panel-${esc(v.id)}" aria-label="${open ? 'Fechar anotações' : 'Anotar'}: ${esc(v.data.title)}">${icon('pencil', 'sm')}${open ? 'Fechar notas' : 'Anotar'}</button>
       <a class="btn sm soft" href="${esc(safeUrl(v.data.url))}" target="_blank" rel="noopener noreferrer">${icon('play', 'sm')}<span>Assistir</span></a>
       <button class="btn sm ghost icon" data-act="detach" data-vid="${esc(v.id)}" aria-label="Tirar esta aula do dia">${icon('x', 'sm')}</button></div></div>
-      <div class="vid-note collapse ${open ? 'open' : ''}"><div>${open ? `${richEditor({ id: 'vn-' + v.id, input: 'vnote', attrs: `data-vid="${esc(v.id)}"`, text: n ? n.data.text : '', html: n ? n.data.textHtml : '', placeholder: 'O que você aprendeu nesta aula. Fica salvo enquanto você digita.', label: 'Anotações da aula' })}` : ''}</div></div>`;
+      <div id="vn-panel-${esc(v.id)}" class="vid-note collapse ${open ? 'open' : ''}"><div>${open ? `${richEditor({ id: 'vn-' + v.id, input: 'vnote', attrs: `data-vid="${esc(v.id)}"`, text: n ? n.data.text : '', html: n ? n.data.textHtml : '', placeholder: 'O que você aprendeu nesta aula. Fica salvo enquanto você digita.', label: 'Anotações da aula' })}` : ''}</div></div>`;
   }
   return h + `<button class="btn sm" data-act="add-video" style="margin-top:8px">${icon('plus', 'sm')}Adicionar aula</button></section>`;
 }
@@ -147,12 +152,13 @@ function notes(ctx, a) {
 
 function record(ctx, a, plan) {
   const cfs = (plan && plan.data.customFields) || [];
+  const error = scoreError(a.data.questions, a.data.correct);
   return `<section class="card" aria-labelledby="sec-rg"><h3 id="sec-rg">Registro</h3><p class="hint" style="margin-bottom:10px">Questões feitas fora do sistema (apostila, sites). As da IA são contadas automaticamente.</p><div class="grid2">
-    <div class="field"><label class="f" for="rg-q">Questões feitas</label><input id="rg-q" type="number" min="0" inputmode="numeric" value="${a.data.questions ?? ''}" data-input="num" data-f="questions"></div>
-    <div class="field"><label class="f" for="rg-c">Acertos</label><input id="rg-c" type="number" min="0" inputmode="numeric" value="${a.data.correct ?? ''}" data-input="num" data-f="correct"></div>
+    <div class="field"><label class="f" for="rg-q">Questões feitas</label><input id="rg-q" type="number" min="0" inputmode="numeric" value="${esc(a.data.questions ?? '')}" data-input="score" data-change="score" aria-describedby="rg-error" aria-invalid="${!!error}"></div>
+    <div class="field"><label class="f" for="rg-c">Acertos</label><input id="rg-c" type="number" min="0" inputmode="numeric" value="${esc(a.data.correct ?? '')}" data-input="score" data-change="score" aria-describedby="rg-error" aria-invalid="${!!error}"></div>
     <div class="field"><label class="f" for="rg-d">Dificuldade (1 a 5)</label><input id="rg-d" type="number" min="1" max="5" inputmode="numeric" value="${a.data.difficulty ?? ''}" data-input="num" data-f="difficulty"></div>
     ${cfs.map(cf => `<div class="field"><label class="f" for="cf-${esc(cf.id)}">${esc(cf.name)}</label><input id="cf-${esc(cf.id)}" type="text" value="${esc((a.data.custom || {})[cf.id] || '')}" data-input="custom" data-cf="${esc(cf.id)}"></div>`).join('')}
-  </div></section>`;
+  </div><p class="hint" id="rg-error" role="status">${esc(error)}</p></section>`;
 }
 
 function more(ctx, a, P) {
@@ -215,7 +221,7 @@ export const actions = {
     if (v === 'done' || a.data.status === 'done') return ctx.toggleDone(a.id, v);
     await patchA(ctx, { status: v });
   },
-  vnote(el, e, ctx) { const v = el.dataset.vid; if (S.openNotes.has(v)) S.openNotes.delete(v); else S.openNotes.add(v); ctx.render(); setTimeout(() => { const t = document.getElementById('vn-' + v); if (t) t.focus(); }, 60); },
+  vnote(el, e, ctx) { const v = el.dataset.vid; if (S.openNotes.delete(v)) savers.get('vn:' + v)?.flush(); else S.openNotes.add(v); ctx.render(true); requestAnimationFrame(() => document.getElementById('vn-' + v)?.focus()); },
   async detach(el, e, ctx) { const a = act(ctx); await patchA(ctx, { videoIds: a.data.videoIds.filter(x => x !== el.dataset.vid) }); toast('Aula tirada deste dia. Ela continua na biblioteca.', { action: 'Desfazer', onAction: () => ctx.store.patch(a.id, { videoIds: a.data.videoIds }) }); },
   'add-video'(el, e, ctx) {
     const a = act(ctx); const all = ctx.store.list('video', { planId: a.planId });
@@ -308,10 +314,36 @@ export const actions = {
   },
 };
 
+async function editScore(el, e, ctx) {
+  const total = $('#rg-q'), correct = $('#rg-c'), hint = $('#rg-error');
+  const error = total.validity.badInput || correct.validity.badInput ? 'Confira os números informados.' : scoreError(total.value, correct.value);
+  hint.textContent = error;
+  for (const field of [total, correct]) field.setAttribute('aria-invalid', String(!!error));
+  if (error || e.type === 'input') return;
+
+  // Só confirma ao terminar a edição. Digitar “12” não deve gravar um acerto provisório.
+  const edits = {};
+  for (const [key, field] of [['questions', total], ['correct', correct]]) {
+    if (field.value !== field.defaultValue) edits[key] = field.value === '' ? null : field.valueAsNumber;
+  }
+  if (!Object.keys(edits).length) return;
+  try {
+    await ctx.store.patch(ctx.route.arg, current => {
+      const pair = { ...current, ...edits };
+      const issue = scoreError(pair.questions, pair.correct);
+      if (issue) throw new Error(issue);
+      return edits;
+    }, { origin: 'input' });
+    if ('questions' in edits) total.defaultValue = String(edits.questions ?? '');
+    if ('correct' in edits) correct.defaultValue = String(edits.correct ?? '');
+  } catch (err) { hint.textContent = err.message || 'Não foi possível salvar o registro de questões.'; }
+}
+
 export const inputs = {
   title: (el, e, ctx) => saver(ctx, 'title:' + ctx.route.arg, (id, v) => ctx.store.patch(id, { title: v }, { origin: 'input' }))(ctx.route.arg, el.value),
   note: (el, e, ctx) => saver(ctx, 'note:' + ctx.route.arg, (id, v) => ctx.store.patch(id, { note: v.text, noteHtml: v.html }, { origin: 'input' }))(ctx.route.arg, sanitize(el)),
   summary: (el, e, ctx) => saver(ctx, 'sum:' + ctx.route.arg, (id, v) => ctx.store.patch(id, { summary: v.text, summaryHtml: v.html }, { origin: 'input' }))(ctx.route.arg, sanitize(el)),
+  score: editScore,
   num: (el, e, ctx) => saver(ctx, 'n:' + el.dataset.f + ctx.route.arg, (id, f, v) => ctx.store.patch(id, { [f]: v === '' ? null : Math.max(0, +v || 0) }, { origin: 'input' }))(ctx.route.arg, el.dataset.f, el.value),
   custom: (el, e, ctx) => saver(ctx, 'cf:' + el.dataset.cf + ctx.route.arg, (id, cf, v) => { const a = ctx.store.get(id); if (a) ctx.store.patch(id, { custom: { ...(a.data.custom || {}), [cf]: v } }, { origin: 'input' }); })(ctx.route.arg, el.dataset.cf, el.value),
   vnote: (el, e, ctx) => saver(ctx, 'vn:' + el.dataset.vid, async (vid, v) => {
@@ -321,6 +353,7 @@ export const inputs = {
   })(el.dataset.vid, sanitize(el)),
 };
 export const changes = {
+  score: editScore,
   dvlevel: (el) => { S.doubtLevel = el.value; },
   date: async (el, e, ctx) => { if (isCivilDate(el.value)) { await ctx.store.patch(ctx.route.arg, { date: el.value }); toast('Atividade movida para ' + fmtShort(el.value) + '.'); } },
   subject: async (el, e, ctx) => { await ctx.store.patch(ctx.route.arg, { subjectId: el.value }); },

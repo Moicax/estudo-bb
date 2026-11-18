@@ -104,14 +104,38 @@ export function attemptsOf(store, planId) {
   const qs = {}; for (const q of store.list('question', { planId })) qs[q.id] = q;
   return store.list('attempt', { planId }).map(a => ({ a, q: qs[a.data.questionId] || null }));
 }
+const missingCount = n => n == null || n === '';
+const wholeCount = n => (typeof n === 'number' || (typeof n === 'string' && n.trim() !== '')) && Number.isSafeInteger(Number(n));
+
+export function scoreError(total, correct, minTotal = 0) {
+  if (!missingCount(total) && (!wholeCount(total) || Number(total) < minTotal)) return minTotal ? 'O total deve ser um número inteiro maior que zero.' : 'O total deve ser um número inteiro igual ou maior que zero.';
+  if (missingCount(correct)) return '';
+  if (!wholeCount(correct) || Number(correct) < 0) return 'Informe um número inteiro de acertos igual ou maior que zero.';
+  if (missingCount(total)) return 'Informe o total de questões para registrar os acertos.';
+  if (Number(correct) > Number(total)) return 'Os acertos não podem passar do total de questões.';
+  return '';
+}
+
+// Um resultado em branco ou inconsistente permanece editável e não entra no desempenho.
+export function scored(total, correct) {
+  return !missingCount(correct) && Number(total) > 0 && !scoreError(total, correct);
+}
+
+function manualScore(activities) {
+  let q = 0, c = 0;
+  for (const { data } of activities) if (scored(data.questions, data.correct)) {
+    q += Number(data.questions); c += Number(data.correct);
+  }
+  return { q, c };
+}
+
 export function progress(store, planId) {
   const subs = subjectMap(store, planId);
   const acts = activitiesOf(store, planId).filter(a => !isRest(subs[a.data.subjectId]));
   const done = acts.filter(a => a.data.status === 'done').length;
   const sched = new Set(); for (const a of acts) for (const v of a.data.videoIds || []) sched.add(v);
   let vw = 0, vsec = 0; for (const id of sched) { const v = store.get(id); if (v && watched(store, id)) { vw++; vsec += v.data.durationSec || 0; } }
-  let q = 0, c = 0;
-  for (const a of acts) { q += +a.data.questions || 0; c += +a.data.correct || 0; }
+  let { q, c } = manualScore(acts);
   for (const { a } of attemptsOf(store, planId)) if (!a.data.countedInActivity) { q++; if (a.data.correct) c++; }
   return { done, total: acts.length, videosWatched: vw, videosTotal: sched.size, watchedSec: vsec, questions: q, correct: c, focusSec: focusSecondsOf(store, planId) };
 }
@@ -122,7 +146,7 @@ export function raioX(store, planId) {
   const errs = store.list('errorEntry', { planId }); const vids = videosOf(store, planId);
   const rows = subs.map(s => {
     const rs = acts.filter(a => a.data.subjectId === s.id);
-    let q = 0, c = 0; for (const a of rs) { q += +a.data.questions || 0; c += +a.data.correct || 0; }
+    let { q, c } = manualScore(rs);
     for (const { a, q: qq } of att) if (qq && qq.data.subjectId === s.id && !a.data.countedInActivity) { q++; if (a.data.correct) c++; }
     const vs = vids.filter(v => v.data.subjectId === s.id);
     const focus = rs.reduce((n, a) => n + focusSecondsOf(store, planId, a.id), 0);

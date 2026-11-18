@@ -1,7 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sessionStart, sessionPause, sessionResume, sessionStop, sessionElapsed, sessionAutoFinish, reviewsAfter } from '../../js/domain/study.js';
+import { sessionStart, sessionPause, sessionResume, sessionStop, sessionElapsed, sessionAutoFinish, reviewsAfter, scoreError, scored, progress, raioX } from '../../js/domain/study.js';
 import { validQuestions, parseLoose, isAdvanced } from '../../js/ai/ai.js';
+
+test('aproveitamento ignora resultados pendentes ou inválidos sem perder o zero real', () => {
+  assert.ok(scoreError(10, 12));
+  assert.ok(scoreError(1.5, 1));
+  assert.ok(scoreError(null, 2));
+  assert.ok(scoreError(0, 0, 1));
+  assert.equal(scoreError(70, null, 1), '');
+  assert.equal(scored(70, ''), false);
+  assert.equal(scored('70', '0'), true);
+  const counts = [[10, 12], [20, null], [5, 0], ['10', '6']];
+  const records = {
+    subject: [{ id: 's', data: { name: 'Matemática', role: 'subject', weight: 1 } }],
+    activity: counts.map(([questions, correct], i) => ({ id: String(i), data: { subjectId: 's', questions, correct } })),
+  };
+  const store = { get: () => null, list: kind => records[kind] || [] };
+  const p = progress(store, 'plano'), rx = raioX(store, 'plano');
+  assert.equal(p.questions, 15);
+  assert.equal(p.correct, 6);
+  assert.equal(rx.estimate, 0.4);
+});
 
 test('cronômetro: pausa, retomada e recarga calculam pelo registro', () => {
   const t0 = 1_000_000;
